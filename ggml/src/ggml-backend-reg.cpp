@@ -551,21 +551,36 @@ void ggml_backend_load_all_from_path(const char * dir_path) {
     bool silent = false;
 #endif
 
-    ggml_backend_load_best("blas", silent, dir_path);
-    ggml_backend_load_best("zendnn", silent, dir_path);
-    ggml_backend_load_best("cann", silent, dir_path);
-    ggml_backend_load_best("cuda", silent, dir_path);
-    ggml_backend_load_best("hip", silent, dir_path);
-    ggml_backend_load_best("metal", silent, dir_path);
-    ggml_backend_load_best("rpc", silent, dir_path);
-    ggml_backend_load_best("sycl", silent, dir_path);
-    ggml_backend_load_best("vulkan", silent, dir_path);
-    ggml_backend_load_best("virtgpu", silent, dir_path);
-    ggml_backend_load_best("opencl", silent, dir_path);
-    ggml_backend_load_best("hexagon", silent, dir_path);
-    ggml_backend_load_best("musa", silent, dir_path);
-    ggml_backend_load_best("openvino", silent, dir_path);
-    ggml_backend_load_best("cpu", silent, dir_path);
+    ggml_backend_reg_t res = ggml_backend_load_best("blas", silent, dir_path);
+    printf("blas load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("zendnn", silent, dir_path);
+    printf("zendnn load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("cann", silent, dir_path);
+    printf("cann load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("cuda", silent, dir_path);
+    printf("cuda load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("hip", silent, dir_path);
+    printf("hip load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("metal", silent, dir_path);
+    printf("metal load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("rpc", silent, dir_path);
+    printf("rpc load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("sycl", silent, dir_path);
+    printf("sycl load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("vulkan", silent, dir_path);
+    printf("vulkan load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("virtgpu", silent, dir_path);
+    printf("virtgpu load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("opencl", silent, dir_path);
+    printf("opencl load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("hexagon", silent, dir_path);
+    printf("hexagon load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("musa", silent, dir_path);
+    printf("musa load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("openvino", silent, dir_path);
+    printf("openvino load result: %s\n", res ? "SUCCESS" : "FAILED");
+    res = ggml_backend_load_best("cpu", silent, dir_path);
+    printf("cpu load result: %s\n", res ? "SUCCESS" : "FAILED");
     // check the environment variable GGML_BACKEND_PATH to load an out-of-tree backend
     const char * backend_path = std::getenv("GGML_BACKEND_PATH");
     if (backend_path) {

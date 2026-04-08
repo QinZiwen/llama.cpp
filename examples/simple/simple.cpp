@@ -79,14 +79,17 @@ int main(int argc, char ** argv) {
 
     // load dynamic backends
 
+    printf("---------------------> Loading dynamic backends...\n");
     ggml_backend_load_all();
+    printf("<--------------------\n");
 
     // initialize the model
-
+    printf("---------------------> Loading model...\n");
     llama_model_params model_params = llama_model_default_params();
     model_params.n_gpu_layers = ngl;
 
     llama_model * model = llama_model_load_from_file(model_path.c_str(), model_params);
+    printf("<--------------------\n");
 
     if (model == NULL) {
         fprintf(stderr , "%s: error: unable to load model\n" , __func__);
@@ -132,7 +135,7 @@ int main(int argc, char ** argv) {
     llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
 
     // print the prompt token-by-token
-
+    printf("[debug] Prompt:\n");
     for (auto id : prompt_tokens) {
         char buf[128];
         int n = llama_token_to_piece(vocab, id, buf, sizeof(buf), 0, true);
