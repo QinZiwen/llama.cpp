@@ -837,6 +837,7 @@ static int llama_model_load(struct gguf_context * metadata, llama_model_set_tens
     model.t_start_us = tm.t_start_us;
 
     try {
+        // 加载元数据，读取模型的结构信息、超参数和文件索引
         llama_model_loader ml(metadata, set_tensor_data, set_tensor_data_ud, fname, splits, file, params.use_mmap, params.use_direct_io,
             params.check_tensors, params.no_alloc, params.kv_overrides, params.tensor_buft_overrides);
 
@@ -851,7 +852,7 @@ static int llama_model_load(struct gguf_context * metadata, llama_model_set_tens
             throw std::runtime_error("error loading model architecture: " + std::string(e.what()));
         }
         try {
-            model.load_hparams(ml);
+            model.load_hparams(ml);     // 从模型文件（通常是 GGUF 格式）中加载模型的超参数（Hyperparameters）和元数据，并根据模型架构进行特定的初始化和类型推断
         } catch(const std::exception & e) {
             throw std::runtime_error("error loading model hyperparameters: " + std::string(e.what()));
         }

@@ -660,7 +660,7 @@ extern "C" {
 
         struct ggml_backend_buffer * buffer;
 
-        int64_t ne[GGML_MAX_DIMS]; // number of elements
+        int64_t ne[GGML_MAX_DIMS]; // number of elements, [W, H, C, B]
         size_t  nb[GGML_MAX_DIMS]; // stride in bytes:
                                    // nb[0] = ggml_type_size(type)
                                    // nb[1] = nb[0]   * (ne[0] / ggml_blck_size(type)) + padding

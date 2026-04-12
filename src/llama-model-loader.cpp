@@ -550,7 +550,7 @@ llama_model_loader::llama_model_loader(
         llm_kv = LLM_KV(llm_arch_from_string(arch_name));
 
         files.emplace_back(new llama_file(fname.c_str(), "rb", use_direct_io));
-        contexts.emplace_back(ctx);
+        contexts.emplace_back(ctx);    // 管理ggml的内存，通过unique ptr自动释放
 
         if (use_mmap && use_direct_io) {
             if (files.back()->has_direct_io()) {
