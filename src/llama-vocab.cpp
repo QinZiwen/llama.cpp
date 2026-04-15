@@ -2154,6 +2154,7 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
 
     id_to_token.resize(n_tokens);
 
+    // llama_vocab::impl::load 方法中的核心部分，负责从 GGUF 文件读取词汇表数据并构建内存中的映射结构
     for (uint32_t i = 0; i < n_tokens; i++) {
         std::string word = gguf_get_arr_str(ctx, token_idx, i);
         if (word.empty()) {
@@ -2161,10 +2162,10 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
             word = "[EMPTY_" + std::to_string(i) + "]";
         }
 
-        token_to_id[word] = i;
+        token_to_id[word] = i;    // 用于快速查找 ID
         max_token_len = std::max(max_token_len, (int) word.size());
 
-        auto & token_data = id_to_token[i];
+        auto & token_data = id_to_token[i];    // 用于通过 ID 获取详细信息
         token_data.text  = std::move(word);
         token_data.score = scores ? scores[i] : 0.0f;
         token_data.attr  = LLAMA_TOKEN_ATTR_NORMAL;
@@ -2241,7 +2242,7 @@ void llama_vocab::impl::load(llama_model_loader & ml, const LLM_KV & kv) {
             int32_t & id = std::get<1>(it);
 
             uint32_t new_id;
-            if (!ml.get_key(std::get<0>(it), new_id, false)) {
+            if (!ml.get_key(std::get<0>(it), new_id, false)) {  // 尝试从模型加载器 ml 中读取该键对应的值
                 continue;
             }
             if (new_id >= id_to_token.size()) {

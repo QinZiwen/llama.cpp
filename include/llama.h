@@ -98,17 +98,42 @@ extern "C" {
         LLAMA_TOKEN_TYPE_BYTE         = 6,
     };
 
+    // 定义 Token 属性的位标志。这些标志描述了 Token 的特定属性或行为。
     enum llama_token_attr {
+        // 默认状态：未设置任何特定属性。
         LLAMA_TOKEN_ATTR_UNDEFINED    = 0,
+
+        // 该 Token 代表未知或词汇表外的内容（例如 <unk>）。
         LLAMA_TOKEN_ATTR_UNKNOWN      = 1 << 0,
+
+        // 该 Token 在词汇表中保留/未使用，但占据了一个位置。
         LLAMA_TOKEN_ATTR_UNUSED       = 1 << 1,
+
+        // 标准的常规文本 Token（例如单词、子词）。
         LLAMA_TOKEN_ATTR_NORMAL       = 1 << 2,
+
+        // 控制或特殊 Token，影响生成逻辑而非代表文本内容 
+        //（例如 <s>, </s>, <pad>, <|end|>）。通常被称为“特殊” Token。
         LLAMA_TOKEN_ATTR_CONTROL      = 1 << 3,  // SPECIAL?
+
+        // 由用户或模型架构明确定义的 Token，用于特定目的，
+        // 区别于标准词汇表。
         LLAMA_TOKEN_ATTR_USER_DEFINED = 1 << 4,
+
+        // 代表单个原始字节值（例如 <0x0A>），用于分词中的字节级回退。
         LLAMA_TOKEN_ATTR_BYTE         = 1 << 5,
+
+        // 表示 Token 文本在预处理过程中已被标准化（例如 NFD/NFC 标准化）。
         LLAMA_TOKEN_ATTR_NORMALIZED   = 1 << 6,
+
+        // 左剥离（Left-strip）：在反分词（detokenization）过程中，应移除/剥离该 Token 左侧的空格。
         LLAMA_TOKEN_ATTR_LSTRIP       = 1 << 7,
+
+        // 右剥离（Right-strip）：在反分词（detokenization）过程中，应移除/剥离该 Token 右侧的空格。
         LLAMA_TOKEN_ATTR_RSTRIP       = 1 << 8,
+
+        // 表示该 Token 代表一个完整的独立单词，在某些上下文中不应与相邻 Token 合并
+        //（常用于类似 WordPiece 的分词器）。
         LLAMA_TOKEN_ATTR_SINGLE_WORD  = 1 << 9,
     };
 

@@ -860,7 +860,7 @@ static int llama_model_load(struct gguf_context * metadata, llama_model_set_tens
             throw std::runtime_error("CLIP cannot be used as main model, use it with --mmproj instead");
         }
         try {
-            model.load_vocab(ml);
+            model.load_vocab(ml);    // 主要任务是从 GGUF 模型文件中读取元数据，构建内存中的 Token 映射结构，并根据模型类型配置 Tokenizer 的行为
         } catch(const std::exception & e) {
             throw std::runtime_error("error loading model vocabulary: " + std::string(e.what()));
         }

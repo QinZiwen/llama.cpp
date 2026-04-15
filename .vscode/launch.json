@@ -1,0 +1,34 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "llama-cli",
+            "type": "lldb",                           // macOS 上推荐使用 lldb
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/llama-cli", // 调试的可执行文件路径
+            "args": [
+                "-m", "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+                "-p", "Hello",
+                "-t", "1",                           // 单线程调试
+                "-ngl", "1"                          // 限制 GPU 层数，节省内存
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "CMake: Build"           // 调试前执行的任务名，必须和 tasks.json 里的 label 完全一致
+        },
+        {
+            "name": "llama-simple",
+            "type": "lldb",                           // macOS 上推荐使用 lldb
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/llama-simple", // 调试的可执行文件路径
+            "args": [
+                "-m", "models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf",
+            ],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "CMake: Build"           // 调试前执行的任务名，必须和 tasks.json 里的 label 完全一致
+        },
+    ]
+}
