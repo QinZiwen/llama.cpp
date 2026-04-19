@@ -966,29 +966,45 @@ ggml_tensor * llm_graph_context::build_cvec(
 }
 
 ggml_tensor * llm_graph_context::build_lora_mm(
-          ggml_tensor * w,
-          ggml_tensor * cur,
-          ggml_tensor * w_s) const {
+          ggml_tensor * w,      // 原始权重矩阵 W
+          ggml_tensor * cur,    // 输入激活值 X (current activation)
+          ggml_tensor * w_s) const { // 可选的逐元素缩放因子 (per-tensor scale)
+    
+    // 1. 计算基础矩阵乘法: W * X
     ggml_tensor * res = ggml_mul_mat(ctx0, w, cur);
 
+    // 2. 遍历所有加载的 LoRA 适配器
     for (const auto & lora : *loras) {
+        // 获取当前权重 w 对应的 LoRA 权重结构 (包含矩阵 A 和 B)
         llama_adapter_lora_weight * lw = lora.first->get_weight(w);
+        
+        // 如果当前权重没有关联的 LoRA 调整，则跳过
         if (lw == nullptr) {
             continue;
         }
 
+        // 获取用户设置的适配器缩放比例 (例如命令行参数 --lora-scale)
         const float adapter_scale = lora.second;
+        
+        // 计算最终的缩放系数: (alpha / rank) * adapter_scale
         const float scale = lw->get_scale(lora.first->alpha, adapter_scale);
 
+        // 3. 计算 LoRA 分支: B * (A * X)
+        // 先计算 A * X
+        // 再计算 B * (A * X)
         ggml_tensor * ab_cur = ggml_mul_mat(
                 ctx0, lw->b,
                 ggml_mul_mat(ctx0, lw->a, cur)
                 );
 
+        // 4. 应用缩放系数
         ab_cur = ggml_scale(ctx0, ab_cur, scale);
+        
+        // 5. 将 LoRA 的结果加到主分支结果上: Res = W*X + scale * B*A*X
         res = ggml_add(ctx0, res, ab_cur);
     }
 
+    // 6. 如果有权重缩放因子 (例如用于量化或特定架构优化)，则逐元素相乘
     if (w_s) {
         res = ggml_mul(ctx0, res, w_s);
     }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <unordered_map>
 
+// 它的主要作用是将输入给模型的 token、嵌入向量（embeddings）、位置信息以及序列 ID 等数据打包成一个紧凑、对齐的格式，以便高效地构建计算图并进行并行推理。
 // keep this struct lightweight
 struct llama_ubatch {
     bool equal_seqs() const {

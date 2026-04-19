@@ -530,6 +530,8 @@ struct llm_graph_params {
     llm_arch arch = LLM_ARCH_UNKNOWN;
 
     llama_hparams hparams;
+    // llama_cparams: Runtime context parameters (e.g., n_ctx, n_batch, threads, RoPE scaling).
+    // Unlike hparams (model architecture), these can vary per context instance.
     llama_cparams cparams;
 
     llama_ubatch ubatch; // note: intentionally make a copy
@@ -708,58 +710,58 @@ using llm_graph_result_ptr = std::unique_ptr<llm_graph_result>;
 using llm_graph_get_rows_fn = std::function<ggml_tensor * (ggml_context *, ggml_tensor * states, ggml_tensor * ids)>;
 
 struct llm_graph_context {
-    const llm_arch arch;
+    const llm_arch arch; // 模型架构类型
 
-    const llama_hparams & hparams;
-    const llama_cparams & cparams;
-    const llama_ubatch  & ubatch;
+    const llama_hparams & hparams; // 模型超参数（如层数、隐藏层大小等，固定不变）
+    const llama_cparams & cparams; // 运行时上下文参数（如批处理大小、线程数等，可变）
+    const llama_ubatch  & ubatch; // 统一批处理数据（包含token、嵌入向量、位置信息等）
 
-    const int64_t n_embd;
-    const int64_t n_layer;
-    const int64_t n_rot;
-    const int64_t n_ctx;       // user-specified context size (can be different from n_ctx_train)
-    const int64_t n_head;
-    const int64_t n_head_kv;
-    const int64_t n_embd_head_k;
-    const int64_t n_embd_k_gqa;
-    const int64_t n_embd_head_v;
-    const int64_t n_embd_v_gqa;
-    const int64_t n_expert;
-    const int64_t n_expert_used;
+    const int64_t n_embd; // 嵌入维度大小
+    const int64_t n_layer; // 模型层数
+    const int64_t n_rot; // RoPE旋转维度大小
+    const int64_t n_ctx;       // 用户指定的上下文大小（可能与训练时的n_ctx_train不同）
+    const int64_t n_head; // 注意力头数量
+    const int64_t n_head_kv; // KV缓存的注意力头数量（用于GQA）
+    const int64_t n_embd_head_k; // 每个注意力头的K向量维度
+    const int64_t n_embd_k_gqa; // GQA中K向量的总维度 (n_head_kv * n_embd_head_k)
+    const int64_t n_embd_head_v; // 每个注意力头的V向量维度
+    const int64_t n_embd_v_gqa; // GQA中V向量的总维度 (n_head_kv * n_embd_head_v)
+    const int64_t n_expert; // MoE专家总数
+    const int64_t n_expert_used; // 每次前向传播使用的专家数量
 
-    const float freq_base;
-    const float freq_scale;
-    const float ext_factor;
-    const float attn_factor;
-    const float beta_fast;
-    const float beta_slow;
-    const float norm_eps;
-    const float norm_rms_eps;
+    const float freq_base; // RoPE频率基数
+    const float freq_scale; // RoPE频率缩放因子
+    const float ext_factor; // RoPE扩展因子
+    const float attn_factor; // 注意力缩放因子
+    const float beta_fast; // YaRN快速衰减系数
+    const float beta_slow; // YaRN慢速衰减系数
+    const float norm_eps; // LayerNorm epsilon
+    const float norm_rms_eps; // RMSNorm epsilon
 
-    const int64_t n_tokens;
-    const int64_t n_outputs;
-    const int32_t n_ctx_orig; // yarn
+    const int64_t n_tokens; // 当前批处理中的token总数
+    const int64_t n_outputs; // 输出token的数量
+    const int32_t n_ctx_orig; // 原始上下文大小（用于YaRN）
 
-    const enum llama_pooling_type pooling_type;
-    const enum llama_rope_type    rope_type;
+    const enum llama_pooling_type pooling_type; // 池化类型（如CLS、MEAN等）
+    const enum llama_rope_type    rope_type; // RoPE类型
 
-    ggml_backend_sched_t sched;
+    ggml_backend_sched_t sched; // GGML后端调度器
 
-    ggml_backend_t backend_cpu; // TODO: needed by build_attn_mha, figure out a way to remove?
+    ggml_backend_t backend_cpu; // CPU后端（TODO: 需要重构以移除对build_attn_mha的依赖）
 
-    const llama_adapter_cvec     * cvec;
-    const llama_adapter_loras    * loras;
-    const llama_memory_context_i * mctx;
-    const llama_cross            * cross;
+    const llama_adapter_cvec     * cvec; // 自定义向量适配器
+    const llama_adapter_loras    * loras; // LoRA适配器
+    const llama_memory_context_i * mctx; // 内存上下文接口（KV缓存或递归状态）
+    const llama_cross            * cross; // 跨注意力数据（用于编码器-解码器架构）
 
-    std::map<llama_seq_id, llama_sampler *> samplers;
+    std::map<llama_seq_id, llama_sampler *> samplers; // 每个序列ID对应的采样器
 
-    const llm_graph_cb & cb_func;
+    const llm_graph_cb & cb_func; // 回调函数，用于在构建图时对每个张量执行自定义逻辑
 
-    llm_graph_result * res;
+    llm_graph_result * res; // 图构建结果对象
 
-    ggml_context * ctx0 = nullptr;
-    ggml_cgraph  * gf   = nullptr;
+    ggml_context * ctx0 = nullptr; // 当前用于创建张量的GGML上下文
+    ggml_cgraph  * gf   = nullptr; // 当前正在构建的计算图
 
     llm_graph_context(const llm_graph_params & params);
     virtual ~llm_graph_context() = default;

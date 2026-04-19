@@ -99,6 +99,12 @@ int main(int argc, char ** argv) {
     const llama_vocab * vocab = llama_model_get_vocab(model);
     // tokenize the prompt
 
+    /*
+    llama_tokenize 返回值
+        正整数: 表示成功。代表实际写入 tokens 数组的 token 数量。该值始终 $\le$ n_tokens_max。
+        负整数: 表示因缓冲区大小不足而失败。返回值的绝对值表示完整分词结果原本需要多少个 token。你可以利用这个值重新分配缓冲区并重试。
+        INT32_MIN: 表示溢出错误，意味着所需的 token 数量超过了 32 位整数的限制。
+    */
     // find the number of tokens in the prompt
     const int n_prompt = -llama_tokenize(vocab, prompt.c_str(), prompt.size(), NULL, 0, true, true);
 
