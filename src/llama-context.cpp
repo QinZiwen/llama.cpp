@@ -1169,48 +1169,56 @@ bool llama_context::set_adapter_cvec(
 }
 
 llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+    // 在构建或计算图之前，应用内存上下文更新（例如 KV 缓存的移位/复制操作）
     if (mctx && !mctx->apply()) {
         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
         ret = GGML_STATUS_FAILED;
         return nullptr;
     }
 
+    // 获取之前的图结果对象及其关联的计算图
     auto * res = gf_res_prev.get();
     auto * gf  = res->get_gf();
 
-    // the new graph parameters
-    // in order to correctly reuse a graph, it's full topology has to be uniquely determined by these parameters
+    // 基于当前的 ubatch 和上下文构建新的图参数
+    // 这些参数唯一地决定了图的拓扑结构，用于重用检查
     const auto gparams = graph_params(res, ubatch, mctx, gtype);
 
+    // 检查是否启用了图重用，以及新参数是否允许重用之前的图
     if (!graph_reuse_disable && res->can_reuse(gparams)) {
         //LLAMA_LOG_DEBUG("%s: reusing previous graph\n", __func__);
 
-        // with pipeline parallelism, the previous graph_compute_async may still be running
-        // on the GPU. we must synchronize before set_inputs to avoid overwriting input tensors
-        // that the previous compute is still reading.
+        // 在流水线并行模式下，之前的异步计算可能仍在 GPU 上运行。
+        // 需要同步以确保我们不会覆盖仍在被读取的输入张量。
         if (cparams.pipeline_parallel) {
             ggml_backend_sched_synchronize(sched.get());
         }
 
         n_reused++;
     } else {
+        // 重置之前的图结果，因为它不能被重用
         res->reset();
 
+        // 重置后端调度器以清除任何之前的分配/状态
         ggml_backend_sched_reset(sched.get());
+        // 为调度器设置评估回调（用于日志记录/调试）
         ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
 
         //const auto t_start_us = ggml_time_us();
 
+        // 使用模型和当前参数构建新的计算图
         gf = model.build_graph(gparams);
 
         //LLAMA_LOG_INFO("graph build time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
 
+        // 检查图构建是否失败
         if (!gf) {
             LLAMA_LOG_ERROR("%s: failed to initialize graph\n", __func__);
             ret = GGML_STATUS_FAILED;
             return nullptr;
         }
 
+        // 在后端调度器中为图张量分配内存
         if (!ggml_backend_sched_alloc_graph(sched.get(), gf)) {
             LLAMA_LOG_ERROR("%s: failed to allocate graph\n", __func__);
             ret = GGML_STATUS_ALLOC_FAILED;
@@ -1218,16 +1226,18 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         }
     }
 
-    // set the input data for the input tensors
+    // 为图的输入张量设置输入数据
     {
         //const auto t_start_us = ggml_time_us();
 
-        // FIXME this call causes a crash if any model inputs were not used in the graph and were therefore not allocated
+        // FIXME: 如果模型输入未在图中使用因而未分配，此调用可能会崩溃。
+        // 它将数据从 ubatch（主机）复制到图输入张量（设备/主机）。
         res->set_inputs(&ubatch);
 
         //LLAMA_LOG_INFO("graph set inputs time: %.3f ms\n", (ggml_time_us() - t_start_us)/1000.0);
     }
 
+    // 异步执行计算图
     const auto status = graph_compute(res->get_gf(), ubatch.n_tokens > 1);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: failed to compute graph, compute status: %d\n", __func__, status);
@@ -1235,8 +1245,10 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         return nullptr;
     }
 
+    // 将返回状态设置为成功
     ret = GGML_STATUS_SUCCESS;
 
+    // 返回包含输出张量和元数据的结果对象
     return res;
 }
 
@@ -1688,6 +1700,7 @@ int llama_context::decode(const llama_batch & batch_inp) {
             n_outputs = n_outputs_new;
         }
 
+        // 构建与执行计算图
         ggml_status status;
         const auto * res = process_ubatch(ubatch, LLM_GRAPH_TYPE_DECODER, mctx.get(), status);
 
@@ -2172,9 +2185,11 @@ llm_graph_params llama_context::graph_params(
 ggml_status llama_context::graph_compute(
             ggml_cgraph * gf,
                    bool   batched) {
+    // 设置线程参数：根据是否是批量处理（batched）选择对应的线程数和线程池
     int n_threads        = batched ? cparams.n_threads_batch : cparams.n_threads;
     ggml_threadpool_t tp = batched ? threadpool_batch        : threadpool;
 
+    // 如果存在 CPU 后端，尝试设置其线程池
     if (backend_cpu != nullptr) {
         auto * reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend_cpu));
         auto * set_threadpool_fn = (decltype(ggml_backend_cpu_set_threadpool) *) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cpu_set_threadpool");
@@ -2183,11 +2198,15 @@ ggml_status llama_context::graph_compute(
         }
     }
 
-    // set the number of threads for all the backends
+    // 为所有支持的后端设置线程数
     for (const auto & set_n_threads_fn : set_n_threads_fns) {
         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
     }
 
+    // 异步执行计算图
+    // ggml_backend_sched_graph_compute_async 是 ggml 库提供的核心接口，
+    // 负责在后端调度器（sched）上异步执行给定的计算图（gf）。
+    // 它会根据图中节点的依赖关系和后端的可用性，自动分配任务并执行。
     auto status = ggml_backend_sched_graph_compute_async(sched.get(), gf);
     if (status != GGML_STATUS_SUCCESS) {
         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);

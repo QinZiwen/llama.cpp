@@ -30,5 +30,16 @@
             "externalConsole": false,
             "preLaunchTask": "CMake: Build"           // 调试前执行的任务名，必须和 tasks.json 里的 label 完全一致
         },
+        {
+            "name": "test-alloc",
+            "type": "lldb",                           // macOS 上推荐使用 lldb
+            "request": "launch",
+            "program": "${workspaceFolder}/build/bin/test-alloc", // 调试的可执行文件路径
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": false,
+            "preLaunchTask": "CMake: Build"           // 调试前执行的任务名，必须和 tasks.json 里的 label 完全一致
+        },
     ]
 }

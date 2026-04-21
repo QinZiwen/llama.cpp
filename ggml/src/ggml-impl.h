@@ -319,25 +319,43 @@ static size_t ggml_hash_find_or_insert(struct ggml_hash_set * hash_set, struct g
 // computation graph
 
 enum ggml_cgraph_eval_order {
-    GGML_CGRAPH_EVAL_ORDER_LEFT_TO_RIGHT = 0,
-    GGML_CGRAPH_EVAL_ORDER_RIGHT_TO_LEFT,
-    GGML_CGRAPH_EVAL_ORDER_COUNT
+    GGML_CGRAPH_EVAL_ORDER_LEFT_TO_RIGHT = 0,   // 先执行没有依赖的节点（或依赖已满足的节点），通常对应于神经网络的**前向传播（Forward Pass）**过程
+    GGML_CGRAPH_EVAL_ORDER_RIGHT_TO_LEFT,       // 先执行图的输出节点，最后执行输入节点。主要用于**反向传播（Backward Pass）**计算梯度时。在自动微分中，梯度的链式法则需要从损失函数（图的末端）向前逐层回传。因此，需要以与前向传播相反的顺序来执行梯度计算操作。
+    GGML_CGRAPH_EVAL_ORDER_COUNT                // 它不代表实际的执行顺序，而是用于表示上述有效枚举值的数量
 };
 
+/**
+ * struct ggml_cgraph describes a computation graph.
+ * 
+ * A computation graph is a directed acyclic graph (DAG) where:
+ * - Nodes represent operations (tensors with associated ops) that produce data.
+ * - Leafs represent input tensors with constant data or data that doesn't change during graph evaluation.
+ * - Edges are implicitly defined by the source tensors (src[0], src[1], etc.) of each node.
+ * 
+ * The graph structure allows for:
+ * 1. Forward pass: Evaluating nodes in topological order to compute outputs.
+ * 2. Backward pass: Computing gradients using the grads and grad_accs arrays if needed.
+ * 
+ * Memory management:
+ * - The arrays (nodes, leafs, grads, etc.) are pre-allocated with size 'size'.
+ * - 'n_nodes' and 'n_leafs' track the current number of active elements.
+ */
 struct ggml_cgraph {
     int size;    // maximum number of nodes/leafs/grads/grad_accs
     int n_nodes; // number of nodes currently in use
     int n_leafs; // number of leafs currently in use
 
-    struct ggml_tensor ** nodes;     // tensors with data that can change if the graph is evaluated
-    struct ggml_tensor ** grads;     // the outputs of these tensors are the gradients of the nodes
-    struct ggml_tensor ** grad_accs; // accumulators for node gradients
-    struct ggml_tensor ** leafs;     // tensors with constant data
-    int32_t             * use_counts;// number of uses of each tensor, indexed by hash table slot
+    struct ggml_tensor ** nodes;     // tensors with data that can change if the graph is evaluated. Each tensor has an 'op' field defining the operation.
+    struct ggml_tensor ** grads;     // the outputs of these tensors are the gradients of the nodes (used for backward pass)
+    struct ggml_tensor ** grad_accs; // accumulators for node gradients (used for backward pass)
+    struct ggml_tensor ** leafs;     // tensors with constant data (inputs to the graph)
+    int32_t             * use_counts;// number of uses of each tensor, indexed by hash table slot. Used for memory optimization (freeing intermediate results).
 
-    struct ggml_hash_set visited_hash_set;
+    // 用于拓扑排序，确保节点的执行顺序正确（比如先执行子节点，再执行父节点）。
+    struct ggml_hash_set visited_hash_set; // Hash set to track visited tensors during graph construction/traversal to avoid duplicates and cycles.
 
-    enum ggml_cgraph_eval_order order;
+    // 指定计算图的执行顺序
+    enum ggml_cgraph_eval_order order; // Evaluation order preference (Left-to-Right or Right-to-Left)
 };
 
 // returns a slice of cgraph with nodes [i0, i1)
