@@ -2782,7 +2782,13 @@ extern "C" {
 
     struct ggml_type_traits {
         const char             * type_name;
-        int64_t                  blck_size;
+
+        /*
+        对于非量化类型（如 GGML_TYPE_F32, GGML_TYPE_F16）： blck_size 通常为 1。因为每个浮点数都是独立存储的，不需要共享缩放因子。
+        对于量化类型（如 GGML_TYPE_Q4_0）： blck_size 通常大于 1（例如 32）。这意味着每 32 个原始浮点数会被压缩成一个量化块，这 32 个数共享同一个缩放因子 d。
+        */
+        int64_t                  blck_size;   // 指的是量化块中包含的元素个数。
+        // 定义了在这个块内部，数据是如何交错存储的，以便 CPU/GPU 的向量指令可以更高效地读取和处理。
         int64_t                  blck_size_interleave; // interleave elements in blocks
         size_t                   type_size;
         bool                     is_quantized;

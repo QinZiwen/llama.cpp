@@ -507,3 +507,7 @@ if (MSVC)
         configure_msvc_target(test-pool)
     endif ()
 endif()
+
+if (GGML_STANDALONE)
+    add_subdirectory(examples/ggml-demo)
+endif()
