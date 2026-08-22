@@ -30,6 +30,8 @@ extern "C" {
 
 void ggml_print_backtrace(void);
 
+uint64_t ggml_graph_next_uid(void);
+
 #ifndef MIN
 #    define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
@@ -354,8 +356,11 @@ struct ggml_cgraph {
     // 用于拓扑排序，确保节点的执行顺序正确（比如先执行子节点，再执行父节点）。
     struct ggml_hash_set visited_hash_set; // Hash set to track visited tensors during graph construction/traversal to avoid duplicates and cycles.
 
-    // 指定计算图的执行顺序
-    enum ggml_cgraph_eval_order order; // Evaluation order preference (Left-to-Right or Right-to-Left)
+    enum ggml_cgraph_eval_order order;
+
+    // an optional identifier that can be utilized to recognize same graphs if two non-zero values match
+    // a value of 0 means it is not set and should be ignored
+    uint64_t uid;
 };
 
 // returns a slice of cgraph with nodes [i0, i1)
