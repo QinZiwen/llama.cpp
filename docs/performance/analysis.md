@@ -225,23 +225,66 @@ GET_ROWS                         99       10.703    0.34%
 TOTAL                                   3147.155  100.00%
 ```
 
+## 过滤元数据 op 后重测（2026-08-30）
+
+把 `RESHAPE / VIEW / PERMUTE / GET_ROWS / SET_ROWS` 从统计中剔除后重跑（改 `src/llama-context.cpp` 过滤逻辑后重新编译，同一命令）。
+
+### PP512（过滤后）
+
+```
+OP                            calls     time(ms)        %
+-----------------------------------------------
+MUL_MAT                         226     1040.664   86.46%
+FLASH_ATTN_EXT                   32       50.167    4.17%
+ADD                              64       26.712    2.22%
+GLU                              32       26.703    2.22%
+RMS_NORM                         66       23.506    1.95%
+MUL                              66       18.503    1.54%
+ROPE                             64       17.377    1.44%
+-----------------------------------------------
+TOTAL                                   1203.632  100.00%
+```
+
+### TG32（过滤后）
+
+```
+OP                            calls     time(ms)        %
+-----------------------------------------------
+MUL_MAT                        3729      979.300   51.80%
+ADD                            1056      187.463    9.92%
+RMS_NORM                       1089      183.475    9.70%
+MUL                            1089      177.207    9.37%
+ROPE                           1056      165.634    8.76%
+GLU                             528      100.323    5.31%
+FLASH_ATTN_EXT                  528       97.193    5.14%
+-----------------------------------------------
+TOTAL                                   1890.595  100.00%
+```
+
+### 失真程度验证
+
+| workload | MUL_MAT 原始占比 | 过滤后占比 | 元数据 op 同步税占比 |
+| --- | --- | --- | --- |
+| PP512 | 79.18% | **86.46%** | 122ms / 1325ms ≈ 9.2% |
+| TG32 | 32.10% | **51.80%** | 1257ms / 3147ms ≈ 39.9% |
+
+结论：
+
+- **PP 失真小（约 7 个百分点）**：元数据 op 在 PP 中本来就少，过滤后 MUL_MAT 从 79% → 86.5%，仍是压倒性热点。
+- **TG 失真巨大（约 20 个百分点）**：TG 每 token 都跑一遍全部 op，元数据 op 数量暴增（原始表里 VIEW/RESHAPE/PERMUTE 占 32.5%），几乎全是同步税。过滤后 MUL_MAT 从 32% → 51.8%。
+- **过滤后 TG 仍无单一 dominant op**：MUL_MAT 过半，但 ADD/RMS_NORM/MUL/ROPE 各占 ~9%，时间被均匀分摊 —— 正是 memory-bound（都在等带宽）的特征。
+
 ## 对比与洞察
 
 1. **MUL_MAT 是唯一 dominant op**：PP512 占 79.2%，TG32 占 32.1%。这与原计划假设的 `MUL_MAT ~71%` 一致，PP 场景下 MUL_MAT 就是绝对热点。
 
 2. **TG 下 MUL_MAT 占比骤降，但这不是它变快了**：TG 每次只喂 1 个 token，graph 节点数暴增（MUL_MAT calls：PP 226 → TG 3729），所有 op 都每 token 跑一遍。TG 里 `VIEW+RESHAPE+PERMUTE` 从 PP 的 6.7% 涨到 32.5% —— 这几乎全是 profiling 的 per-node 同步开销，真实执行时它们是 ~0。
 
-3. **排除元数据 op 后重估 MUL_MAT 占比**（仅粗略参考，同步税仍在）：
+3. **排除元数据 op 后（实测过滤，见上节）**：MUL_MAT 占比 PP512 79.2% → **86.5%**，TG32 32.1% → **51.8%**。与上文的粗估（≈84.8% / ≈47.6%）方向一致，但实测值更高，说明同步税比预想更大。
 
-   | workload | MUL_MAT 原始占比 | 元数据 op 占比 | 排除后 MUL_MAT |
-   | --- | --- | --- | --- |
-   | PP512 | 79.2% | 6.7%（VIEW/RESHAPE/PERMUTE） | ≈ 84.8% |
-   | TG32 | 32.1% | 32.5% | ≈ 47.6% |
+   PP 场景 MUL_MAT 是一边倒的热点；TG 场景其他计算 op（ADD/ROPE/RMS_NORM/MUL/GLU/FLASH_ATTN_EXT）合计仍占 ~48%，没有单一 dominant op —— 这与"TG 是 memory-bound、所有 op 都在等内存"的结论互相印证。
 
-   PP 场景 MUL_MAT 是一边倒的热点；TG 场景其他计算 op（ADD/ROPE/RMS_NORM/MUL/SET_ROWS/GLU/FLASH_ATTN_EXT）合计占比明显上升，没有单一 dominant op —— 这与"TG 是 memory-bound、所有 op 都在等内存"的结论互相印证。
-
-4. **下一步（验证 profiling 的失真）**：
-   - 过滤掉 `RESHAPE/VIEW/PERMUTE/GET_ROWS/SET_ROWS` 等纯内存/视图 op 后重算占比，得到更接近真实的 MUL_MAT 时间份额；
-   - 用 roofline 判断：PP 下 MUL_MAT 是 compute-bound 还是 memory-bound（决定 kernel 优化空间）；
-   - 若要干净的真实时间，需要去掉强制同步的插桩方式（后续里程碑 B 再做）。
+4. **下一步**：
+   - 用 roofline 判断：PP 下 MUL_MAT（占 86.5%）是 compute-bound 还是 memory-bound —— 决定 kernel 优化空间（里程碑 B）；
+   - 若要干净的真实时间（不含同步税），需要去掉强制同步的插桩方式（后续里程碑 B 再做）。
 

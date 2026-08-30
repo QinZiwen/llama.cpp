@@ -49,14 +49,31 @@ struct llama_op_profiler {
 
 static llama_op_profiler g_op_profiler;
 
+// 纯元数据/视图 op：真实执行时几乎零成本，在 per-node 同步插桩下会被撑大。
+// 过滤掉它们，让 MUL_MAT 等真实 op 的占比更接近真实（代价：分母不含这些 op 的时间）。
+static bool llama_op_profile_is_meta(enum ggml_op op) {
+    switch (op) {
+        case GGML_OP_VIEW:
+        case GGML_OP_RESHAPE:
+        case GGML_OP_PERMUTE:
+        case GGML_OP_GET_ROWS:
+        case GGML_OP_SET_ROWS:
+            return true;
+        default:
+            return false;
+    }
+}
+
 static bool llama_cb_eval_op_profile(struct ggml_tensor * t, bool ask, void * user_data) {
     auto * prof = (llama_op_profiler *) user_data;
     if (ask) {
         prof->t_start_us = ggml_time_us();
         return true; // 强制每个 node 单独一组,才能拿到 per-op 时间
     }
-    prof->n_calls[t->op] += 1;
-    prof->time_us[t->op] += ggml_time_us() - prof->t_start_us;
+    if (!llama_op_profile_is_meta(t->op)) {
+        prof->n_calls[t->op] += 1;
+        prof->time_us[t->op] += ggml_time_us() - prof->t_start_us;
+    }
     return true;
 }
 
@@ -78,7 +95,7 @@ static void llama_op_profiler_print(const llama_op_profiler & prof) {
               [](const auto & a, const auto & b) { return a.second > b.second; });
 
     // 直接写 stderr:llama-bench 等工具会 llama_log_set(null_cb) 丢弃 LLAMA_LOG_*
-    fprintf(stderr, "\n===== GGML OPERATOR PROFILE =====\n");
+    fprintf(stderr, "\n===== GGML OPERATOR PROFILE (meta ops filtered) =====\n");
     fprintf(stderr, "%-24s %10s %12s %8s\n", "OP", "calls", "time(ms)", "%");
     fprintf(stderr, "-----------------------------------------------\n");
     for (const auto & item : items) {
