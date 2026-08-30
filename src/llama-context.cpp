@@ -13,16 +13,86 @@
 #include "llama-sampler.h"
 #include "llama.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
 //
 // llama_context
 //
+
+// === op-level profiling(实验性工具,环境变量 LLAMA_OP_PROFILE=1 开启) ===
+//
+// 原理:复用 llama_context_params.cb_eval 的 eval callback 机制。
+// 当 callback 对每个 node 都返回 need=true 时,ggml_backend_sched 会把
+// 每个 node 单独提交 + 同步,从而在 ask=true(提交前)/ ask=false(完成后)
+// 之间测到该 op 一次执行的时间。
+//
+// 注意:
+//  - 开启后每个 node 都被强制同步,性能显著下降,因此只用于 profiling,不要用于正式 benchmark。
+//  - 测到的是"提交 + 执行 + 同步"的墙钟时间,绝对时间偏大,但 operator 之间的占比仍有参考意义。
+//  - 统计为全局累积,适用于单 context、串行 decode(llama-bench / llama-cli 单次运行)。
+struct llama_op_profiler {
+    bool enabled = false;
+    int64_t t_start_us = 0;
+    std::unordered_map<enum ggml_op, int64_t> n_calls;
+    std::unordered_map<enum ggml_op, int64_t> time_us;
+};
+
+static llama_op_profiler g_op_profiler;
+
+static bool llama_cb_eval_op_profile(struct ggml_tensor * t, bool ask, void * user_data) {
+    auto * prof = (llama_op_profiler *) user_data;
+    if (ask) {
+        prof->t_start_us = ggml_time_us();
+        return true; // 强制每个 node 单独一组,才能拿到 per-op 时间
+    }
+    prof->n_calls[t->op] += 1;
+    prof->time_us[t->op] += ggml_time_us() - prof->t_start_us;
+    return true;
+}
+
+static void llama_op_profiler_print(const llama_op_profiler & prof) {
+    if (!prof.enabled) {
+        return;
+    }
+
+    int64_t total_us = 0;
+    for (const auto & kv : prof.time_us) {
+        total_us += kv.second;
+    }
+    if (total_us <= 0) {
+        return;
+    }
+
+    std::vector<std::pair<enum ggml_op, int64_t>> items(prof.time_us.begin(), prof.time_us.end());
+    std::sort(items.begin(), items.end(),
+              [](const auto & a, const auto & b) { return a.second > b.second; });
+
+    // 直接写 stderr:llama-bench 等工具会 llama_log_set(null_cb) 丢弃 LLAMA_LOG_*
+    fprintf(stderr, "\n===== GGML OPERATOR PROFILE =====\n");
+    fprintf(stderr, "%-24s %10s %12s %8s\n", "OP", "calls", "time(ms)", "%");
+    fprintf(stderr, "-----------------------------------------------\n");
+    for (const auto & item : items) {
+        const enum ggml_op op = item.first;
+        const int64_t     us  = item.second;
+        fprintf(stderr, "%-24s %10lld %12.3f %7.2f%%\n",
+            ggml_op_name(op),
+            (long long) prof.n_calls.at(op),
+            us / 1000.0,
+            100.0 * us / total_us);
+    }
+    fprintf(stderr, "-----------------------------------------------\n");
+    fprintf(stderr, "%-24s %10s %12.3f %7.2f%%\n", "TOTAL", "", total_us / 1000.0, 100.0);
+}
 
 static llm_graph_type ctx_type_to_graph_type(llama_context_type ctx_type) {
     switch (ctx_type) {
@@ -481,6 +551,9 @@ llama_context::llama_context(
 llama_context::~llama_context() {
     // wait for any pending asynchronous copies into the output buffers before they are freed
     synchronize();
+
+    // 实验性 op-level profiling 输出（环境变量 LLAMA_OP_PROFILE 开启时生效）
+    llama_op_profiler_print(g_op_profiler);
 
     if (!model.hparams.no_alloc) {
         for (size_t i = 0; i < backend_ptrs.size(); ++i) {
@@ -1356,7 +1429,13 @@ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, ll
         // 重置后端调度器以清除任何之前的分配/状态
         ggml_backend_sched_reset(sched.get());
         // 为调度器设置评估回调（用于日志记录/调试）
-        ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
+        if (getenv("LLAMA_OP_PROFILE")) {
+            g_op_profiler = llama_op_profiler{}; // 每个 context 独立统计
+            g_op_profiler.enabled = true;
+            ggml_backend_sched_set_eval_callback(sched.get(), llama_cb_eval_op_profile, &g_op_profiler);
+        } else {
+            ggml_backend_sched_set_eval_callback(sched.get(), cparams.cb_eval, cparams.cb_eval_user_data);
+        }
 
         //const auto t_start_us = ggml_time_us();
 
