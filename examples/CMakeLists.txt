@@ -18,6 +18,8 @@ else()
     add_subdirectory(debug)
     add_subdirectory(embedding)
     add_subdirectory(eval-callback)
+    add_subdirectory(gemm-bench)
+    add_subdirectory(mma-probe)
 
     add_subdirectory(gguf-hash)
     add_subdirectory(gguf)
